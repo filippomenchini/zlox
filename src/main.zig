@@ -33,7 +33,10 @@ pub fn main() !void {
         arg = args.next();
     }
 
-    if (script != null) return;
+    if (script != null) {
+        try zlox.runner.file(script.?);
+        return;
+    }
 
     try zlox.runner.prompt(stdin_ri, stdout_wi);
 }

@@ -10,6 +10,10 @@ pub fn prompt(input: *std.Io.Reader, ouput: *std.Io.Writer) !void {
     }
 }
 
+pub fn file(path: []const u8) !void {
+    _ = try run(path);
+}
+
 fn run(bytes: []const u8) !bool {
     if (bytes.len == 0) return true;
     if (std.mem.eql(u8, bytes, "exit")) return false;
