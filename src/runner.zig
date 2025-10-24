@@ -11,13 +11,22 @@ pub fn prompt(input: *std.Io.Reader, output: *std.Io.Writer) !void {
 }
 
 pub fn file(path: []const u8) !void {
-    _ = path;
-    // _ = try run(path);
+    const f = try std.fs.cwd().openFile(path, .{});
+    var buffer: [4096]u8 = undefined;
+    var f_r = f.reader(&buffer);
+    const f_ri = &f_r.interface;
+
+    while (true) {
+        if (f_r.atEnd()) break;
+        _ = try run(f_ri);
+    }
 }
 
 fn run(reader: *std.Io.Reader) !bool {
-    const bytes = try reader.takeDelimiterExclusive('\n');
-    reader.toss(1);
+    const bytes = reader.takeDelimiterExclusive('\n') catch |err| switch (err) {
+        error.EndOfStream => return false,
+        else => return err,
+    };
 
     if (bytes.len == 0) return true;
     if (std.mem.eql(u8, bytes, "exit")) return false;
