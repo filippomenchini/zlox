@@ -57,6 +57,6 @@ pub const Literal = union(enum) {
 const Self = @This();
 
 type: Type,
-lexeme: []const u8,
-literal: Literal,
-line: usize,
+literal: ?Literal = null,
+line: usize = 0,
+column: usize = 0,

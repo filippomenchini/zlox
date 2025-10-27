@@ -1,16 +1,17 @@
 const std = @import("std");
+const scan = @import("scan.zig");
 
-pub fn prompt(input: *std.Io.Reader, output: *std.Io.Writer) !void {
+pub fn prompt(allocator: std.mem.Allocator, input: *std.Io.Reader, output: *std.Io.Writer) !void {
     try output.print("zlox - REPL v0.1.0\n", .{});
     while (true) {
         try output.print("> ", .{});
         try output.flush();
 
         const bytes = try input.takeDelimiterExclusive('\n');
-        input.toss(1); //Tossing '/n' otherwise we get stuck in a loop.
+        input.toss(1); //Tossing '\n' otherwise we get stuck in a loop.
 
         var bytes_reader = std.Io.Reader.fixed(bytes);
-        const state = try run(&bytes_reader);
+        const state = try run(allocator, &bytes_reader);
         switch (state.status) {
             else => {},
             .done => break,
@@ -18,13 +19,13 @@ pub fn prompt(input: *std.Io.Reader, output: *std.Io.Writer) !void {
     }
 }
 
-pub fn file(path: []const u8) !void {
+pub fn file(allocator: std.mem.Allocator, path: []const u8) !void {
     const f = try std.fs.cwd().openFile(path, .{});
     var buffer: [4096]u8 = undefined;
     var f_r = f.reader(&buffer);
 
     while (true) {
-        const state = try run(&f_r.interface);
+        const state = try run(allocator, &f_r.interface);
         switch (state.status) {
             else => {},
             .err, .done => break,
@@ -40,16 +41,13 @@ const State = struct {
     } = .ok,
 };
 
-fn run(reader: *std.Io.Reader) !State {
-    while (true) {
-        const byte = reader.takeByte() catch |err| switch (err) {
-            error.EndOfStream => break,
-            else => return err,
-        };
+fn run(allocator: std.mem.Allocator, reader: *std.Io.Reader) !State {
+    const tokens = scan.tokens(allocator, reader) catch |err| switch (err) {
+        error.UnexpectedCharacter => return .{ .status = .err },
+        else => return err,
+    };
+    defer allocator.free(tokens);
 
-        std.debug.print("{c}", .{byte});
-    }
-
-    std.debug.print("\n", .{});
-    return .{ .status = .done };
+    std.debug.print("{any}\n", .{tokens});
+    return .{ .status = .ok };
 }

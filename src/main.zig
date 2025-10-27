@@ -34,9 +34,9 @@ pub fn main() !void {
     }
 
     if (script != null) {
-        try zlox.runner.file(script.?);
+        try zlox.runner.file(allocator, script.?);
         return;
     }
 
-    try zlox.runner.prompt(stdin_ri, stdout_wi);
+    try zlox.runner.prompt(allocator, stdin_ri, stdout_wi);
 }
