@@ -4,7 +4,14 @@ const Token = @import("token.zig");
 pub fn tokens(
     allocator: std.mem.Allocator,
     reader: *std.Io.Reader,
-) ![]Token {
+) error{
+    UnexpectedCharacter,
+    UnterminatedString,
+    OutOfMemory,
+    ReadFailed,
+    EndOfStream,
+    StreamTooLong,
+}![]Token {
     var list = try std.ArrayList(Token).initCapacity(allocator, 1024);
     errdefer list.deinit(allocator);
 
@@ -26,7 +33,7 @@ pub fn tokens(
             }
         }
 
-        var token: Token = switch (byte) {
+        var token: ?Token = switch (byte) {
             '(' => .{ .type = .LEFT_PAREN },
             ')' => .{ .type = .RIGHT_PAREN },
             '{' => .{ .type = .LEFT_BRACE },
@@ -69,20 +76,62 @@ pub fn tokens(
                 }
                 break :blk .{ .type = .GREATER };
             },
+            '/' => blk: {
+                if (try match(reader, '/')) {
+                    reader.toss(1);
+                    column += 1;
+                    const peeked = reader.peekDelimiterExclusive('\n') catch |err| switch (err) {
+                        error.EndOfStream => break :blk null,
+                        else => return err,
+                    };
+                    reader.toss(peeked.len);
+                    column += peeked.len;
+                    break :blk null;
+                } else {
+                    break :blk .{ .type = .SLASH };
+                }
+            },
+            ' ', '\r', '\t', '\n' => null,
+            '"' => blk: {
+                const string = reader.takeDelimiterExclusive('"') catch |err| switch (err) {
+                    error.EndOfStream => return error.UnterminatedString,
+                    else => return err,
+                };
+                const closing_quote = reader.takeByte() catch |err| switch (err) {
+                    error.EndOfStream => return error.UnterminatedString,
+                    else => return err,
+                };
+
+                if (closing_quote != '"') return error.UnterminatedString;
+
+                column += 1;
+                for (string) |char| {
+                    if (char == '\n') {
+                        line += 1;
+                        column = 1;
+                    } else {
+                        column += 1;
+                    }
+                }
+
+                const owned_string = try allocator.dupe(u8, string);
+                break :blk .{ .type = .STRING, .literal = .{ .string = owned_string } };
+            },
             else => return error.UnexpectedCharacter,
         };
 
-        token.line = line;
-        token.column = column;
-        std.debug.assert(token.column != 0 and token.line != 0);
+        if (token == null) continue;
 
-        list.appendAssumeCapacity(token);
+        token.?.line = line;
+        token.?.column = column;
+        std.debug.assert(token.?.column != 0 and token.?.line != 0);
+
+        list.appendAssumeCapacity(token.?);
     }
 
     return list.toOwnedSlice(allocator);
 }
 
-// Not really explicit, but I can't think of anything better right now
 fn match(reader: *std.Io.Reader, char: u8) !bool {
     const next_byte = reader.peekByte() catch |err| switch (err) {
         error.EndOfStream => return false,
