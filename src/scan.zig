@@ -117,7 +117,62 @@ pub fn tokens(
                 const owned_string = try allocator.dupe(u8, string);
                 break :blk .{ .type = .STRING, .literal = .{ .string = owned_string } };
             },
-            else => return error.UnexpectedCharacter,
+            else => blk: {
+                if (!isDigit(byte)) return error.UnexpectedCharacter;
+
+                var string: [64]u8 = undefined;
+                string[0] = byte;
+
+                var i: usize = 1;
+                while (true) {
+                    const char = reader.peekByte() catch |err| switch (err) {
+                        error.EndOfStream => break,
+                        else => return err,
+                    };
+
+                    if (!isDigit(char)) break;
+
+                    string[i] = char;
+                    reader.toss(1);
+                    column += 1;
+                    i += 1;
+                }
+
+                var number = std.fmt.parseFloat(f64, string[0..i]) catch return error.UnexpectedCharacter;
+
+                const decimal_point = reader.peek(2) catch |err| switch (err) {
+                    error.EndOfStream => {
+                        break :blk .{ .type = .NUMBER, .literal = .{ .number = number } };
+                    },
+                    else => return err,
+                };
+
+                if (decimal_point[0] == '.' and isDigit(decimal_point[1])) {
+                    reader.toss(1);
+
+                    string[i] = decimal_point[0];
+                    i += 1;
+                    column += 1;
+
+                    string[i] = decimal_point[1];
+                    while (true) {
+                        const char = reader.peekByte() catch |err| switch (err) {
+                            error.EndOfStream => break,
+                            else => return err,
+                        };
+
+                        if (!isDigit(char)) break;
+
+                        string[i] = char;
+                        reader.toss(1);
+                        column += 1;
+                        i += 1;
+                    }
+                }
+
+                number = std.fmt.parseFloat(f64, string[0..i]) catch return error.UnexpectedCharacter;
+                break :blk .{ .type = .NUMBER, .literal = .{ .number = number } };
+            },
         };
 
         if (token == null) continue;
@@ -139,4 +194,8 @@ fn match(reader: *std.Io.Reader, char: u8) !bool {
     };
 
     return next_byte == char;
+}
+
+fn isDigit(char: u8) bool {
+    return char >= '0' and char <= '9';
 }

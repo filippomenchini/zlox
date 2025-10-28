@@ -43,7 +43,6 @@ const State = struct {
 
 fn run(allocator: std.mem.Allocator, reader: *std.Io.Reader) !State {
     const tokens = scan.tokens(allocator, reader) catch |err| switch (err) {
-        error.UnexpectedCharacter => return .{ .status = .err },
         else => return err,
     };
     defer allocator.free(tokens);
