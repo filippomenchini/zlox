@@ -1,6 +1,25 @@
 const std = @import("std");
 const Token = @import("token.zig");
 
+const keywords = std.StaticStringMap(Token.Type).initComptime(.{
+    .{ "and", .AND },
+    .{ "class", .CLASS },
+    .{ "else", .ELSE },
+    .{ "false", .FALSE },
+    .{ "for", .FOR },
+    .{ "fun", .FUN },
+    .{ "if", .IF },
+    .{ "nil", .NIL },
+    .{ "or", .OR },
+    .{ "print", .PRINT },
+    .{ "return", .RETURN },
+    .{ "super", .SUPER },
+    .{ "this", .THIS },
+    .{ "true", .TRUE },
+    .{ "var", .VAR },
+    .{ "while", .WHILE },
+});
+
 pub fn tokens(
     allocator: std.mem.Allocator,
     reader: *std.Io.Reader,
@@ -34,47 +53,47 @@ pub fn tokens(
         }
 
         var token: ?Token = switch (byte) {
-            '(' => .{ .type = .LEFT_PAREN },
-            ')' => .{ .type = .RIGHT_PAREN },
-            '{' => .{ .type = .LEFT_BRACE },
-            '}' => .{ .type = .RIGHT_BRACE },
-            ',' => .{ .type = .COMMA },
-            '.' => .{ .type = .DOT },
-            '-' => .{ .type = .MINUS },
-            '+' => .{ .type = .PLUS },
-            ';' => .{ .type = .SEMICOLON },
-            '*' => .{ .type = .STAR },
+            '(' => .{ .type = .LEFT_PAREN, .lexeme = "(" },
+            ')' => .{ .type = .RIGHT_PAREN, .lexeme = ")" },
+            '{' => .{ .type = .LEFT_BRACE, .lexeme = "{" },
+            '}' => .{ .type = .RIGHT_BRACE, .lexeme = "}" },
+            ',' => .{ .type = .COMMA, .lexeme = "," },
+            '.' => .{ .type = .DOT, .lexeme = "." },
+            '-' => .{ .type = .MINUS, .lexeme = "-" },
+            '+' => .{ .type = .PLUS, .lexeme = "+" },
+            ';' => .{ .type = .SEMICOLON, .lexeme = ";" },
+            '*' => .{ .type = .STAR, .lexeme = "*" },
             '!' => blk: {
                 if (try match(reader, '=')) {
                     reader.toss(1);
                     column += 1;
-                    break :blk .{ .type = .BANG_EQUAL };
+                    break :blk .{ .type = .BANG_EQUAL, .lexeme = "!=" };
                 }
-                break :blk .{ .type = .BANG };
+                break :blk .{ .type = .BANG, .lexeme = "!" };
             },
             '=' => blk: {
                 if (try match(reader, '=')) {
                     reader.toss(1);
                     column += 1;
-                    break :blk .{ .type = .EQUAL_EQUAL };
+                    break :blk .{ .type = .EQUAL_EQUAL, .lexeme = "==" };
                 }
-                break :blk .{ .type = .EQUAL };
+                break :blk .{ .type = .EQUAL, .lexeme = "=" };
             },
             '<' => blk: {
                 if (try match(reader, '=')) {
                     reader.toss(1);
                     column += 1;
-                    break :blk .{ .type = .LESS_EQUAL };
+                    break :blk .{ .type = .LESS_EQUAL, .lexeme = "<=" };
                 }
-                break :blk .{ .type = .LESS };
+                break :blk .{ .type = .LESS, .lexeme = "<" };
             },
             '>' => blk: {
                 if (try match(reader, '=')) {
                     reader.toss(1);
                     column += 1;
-                    break :blk .{ .type = .GREATER_EQUAL };
+                    break :blk .{ .type = .GREATER_EQUAL, .lexeme = ">=" };
                 }
-                break :blk .{ .type = .GREATER };
+                break :blk .{ .type = .GREATER, .lexeme = ">" };
             },
             '/' => blk: {
                 if (try match(reader, '/')) {
@@ -88,7 +107,7 @@ pub fn tokens(
                     column += peeked.len;
                     break :blk null;
                 } else {
-                    break :blk .{ .type = .SLASH };
+                    break :blk .{ .type = .SLASH, .lexeme = "/" };
                 }
             },
             ' ', '\r', '\t', '\n' => null,
@@ -115,63 +134,21 @@ pub fn tokens(
                 }
 
                 const owned_string = try allocator.dupe(u8, string);
-                break :blk .{ .type = .STRING, .literal = .{ .string = owned_string } };
+                const lexeme = try std.fmt.allocPrint(allocator, "\"{s}\"", .{owned_string});
+                break :blk .{ .type = .STRING, .literal = .{ .string = owned_string }, .lexeme = lexeme };
             },
             else => blk: {
-                if (!isDigit(byte)) return error.UnexpectedCharacter;
-
-                var string: [64]u8 = undefined;
-                string[0] = byte;
-
-                var i: usize = 1;
-                while (true) {
-                    const char = reader.peekByte() catch |err| switch (err) {
-                        error.EndOfStream => break,
-                        else => return err,
-                    };
-
-                    if (!isDigit(char)) break;
-
-                    string[i] = char;
-                    reader.toss(1);
-                    column += 1;
-                    i += 1;
+                if (isDigit(byte)) {
+                    const result = try number(allocator, reader, byte);
+                    column += result.col_offset;
+                    break :blk result.token;
+                } else if (isAlpha(byte)) {
+                    const result = try identifier(allocator, reader, byte);
+                    column += result.col_offset;
+                    break :blk result.token;
+                } else {
+                    return error.UnexpectedCharacter;
                 }
-
-                var number = std.fmt.parseFloat(f64, string[0..i]) catch return error.UnexpectedCharacter;
-
-                const decimal_point = reader.peek(2) catch |err| switch (err) {
-                    error.EndOfStream => {
-                        break :blk .{ .type = .NUMBER, .literal = .{ .number = number } };
-                    },
-                    else => return err,
-                };
-
-                if (decimal_point[0] == '.' and isDigit(decimal_point[1])) {
-                    reader.toss(1);
-
-                    string[i] = decimal_point[0];
-                    i += 1;
-                    column += 1;
-
-                    string[i] = decimal_point[1];
-                    while (true) {
-                        const char = reader.peekByte() catch |err| switch (err) {
-                            error.EndOfStream => break,
-                            else => return err,
-                        };
-
-                        if (!isDigit(char)) break;
-
-                        string[i] = char;
-                        reader.toss(1);
-                        column += 1;
-                        i += 1;
-                    }
-                }
-
-                number = std.fmt.parseFloat(f64, string[0..i]) catch return error.UnexpectedCharacter;
-                break :blk .{ .type = .NUMBER, .literal = .{ .number = number } };
             },
         };
 
@@ -198,4 +175,109 @@ fn match(reader: *std.Io.Reader, char: u8) !bool {
 
 fn isDigit(char: u8) bool {
     return char >= '0' and char <= '9';
+}
+
+fn number(allocator: std.mem.Allocator, reader: *std.Io.Reader, byte: u8) !struct { token: Token, col_offset: usize } {
+    var column: usize = 0;
+    var string: [64]u8 = undefined;
+    string[0] = byte;
+
+    var i: usize = 1;
+    while (true) {
+        const char = reader.peekByte() catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
+
+        if (!isDigit(char)) break;
+
+        string[i] = char;
+        reader.toss(1);
+        column += 1;
+        i += 1;
+    }
+
+    var result = std.fmt.parseFloat(f64, string[0..i]) catch return error.UnexpectedCharacter;
+
+    const decimal_point = reader.peek(2) catch |err| switch (err) {
+        error.EndOfStream => {
+            return .{
+                .token = .{
+                    .type = .NUMBER,
+                    .literal = .{ .number = result },
+                    .lexeme = try allocator.dupe(u8, string[0..i]),
+                },
+                .col_offset = column,
+            };
+        },
+        else => return err,
+    };
+
+    if (decimal_point[0] == '.' and isDigit(decimal_point[1])) {
+        reader.toss(1);
+
+        string[i] = decimal_point[0];
+        i += 1;
+        column += 1;
+
+        string[i] = decimal_point[1];
+        while (true) {
+            const char = reader.peekByte() catch |err| switch (err) {
+                error.EndOfStream => break,
+                else => return err,
+            };
+
+            if (!isDigit(char)) break;
+
+            string[i] = char;
+            reader.toss(1);
+            column += 1;
+            i += 1;
+        }
+    }
+
+    result = std.fmt.parseFloat(f64, string[0..i]) catch return error.UnexpectedCharacter;
+    return .{
+        .token = .{
+            .type = .NUMBER,
+            .literal = .{ .number = result },
+            .lexeme = try allocator.dupe(u8, string[0..i]),
+        },
+        .col_offset = column,
+    };
+}
+
+fn isAlpha(byte: u8) bool {
+    return (byte >= 'a' and byte <= 'z') or
+        (byte >= 'A' and byte <= 'z') or
+        (byte == '_');
+}
+
+fn identifier(allocator: std.mem.Allocator, reader: *std.Io.Reader, byte: u8) !struct { token: Token, col_offset: usize } {
+    var column: usize = 0;
+    var string: [256]u8 = undefined;
+    var i: usize = 0;
+    string[i] = byte;
+    i += 1;
+    while (true) {
+        const char = reader.peekByte() catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
+
+        if (!(isAlpha(char) or isDigit(char))) break;
+
+        string[i] = char;
+        reader.toss(1);
+        column += 1;
+        i += 1;
+    }
+
+    const lexeme = try allocator.dupe(u8, string[0..i]);
+    const token_type = keywords.get(lexeme);
+
+    return .{ .token = .{
+        .type = if (token_type) |t| t else .IDENTIFIER,
+        .lexeme = lexeme,
+    }, .col_offset = column };
 }
