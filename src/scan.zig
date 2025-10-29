@@ -38,6 +38,9 @@ pub fn tokens(
     var column: usize = 1;
 
     while (true) {
+        const start_line = line;
+        const start_column = column;
+
         const byte = reader.takeByte() catch |err| switch (err) {
             error.EndOfStream => break,
             else => return err,
@@ -154,8 +157,8 @@ pub fn tokens(
 
         if (token == null) continue;
 
-        token.?.line = line;
-        token.?.column = column;
+        token.?.line = start_line;
+        token.?.column = start_column;
         std.debug.assert(token.?.column != 0 and token.?.line != 0);
 
         list.appendAssumeCapacity(token.?);
