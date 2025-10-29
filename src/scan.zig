@@ -252,7 +252,7 @@ fn number(allocator: std.mem.Allocator, reader: *std.Io.Reader, byte: u8) !struc
 
 fn isAlpha(byte: u8) bool {
     return (byte >= 'a' and byte <= 'z') or
-        (byte >= 'A' and byte <= 'z') or
+        (byte >= 'A' and byte <= 'Z') or
         (byte == '_');
 }
 
