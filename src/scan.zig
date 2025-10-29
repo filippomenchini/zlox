@@ -308,8 +308,16 @@ fn identifier(allocator: std.mem.Allocator, reader: *std.Io.Reader, byte: u8) !s
     const lexeme = try allocator.dupe(u8, string[0..i]);
     const token_type = keywords.get(lexeme);
 
-    return .{ .token = .{
-        .type = if (token_type) |t| t else .IDENTIFIER,
-        .lexeme = lexeme,
-    }, .col_offset = column };
+    return .{
+        .token = .{
+            .type = if (token_type) |t| t else .IDENTIFIER,
+            .lexeme = lexeme,
+            .literal = if (token_type) |t| switch (t) {
+                Token.Type.TRUE => .{ .boolean = true },
+                Token.Type.FALSE => .{ .boolean = false },
+                else => .none,
+            } else .none,
+        },
+        .col_offset = column,
+    };
 }

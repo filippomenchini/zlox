@@ -51,13 +51,14 @@ pub const Type = enum {
 pub const Literal = union(enum) {
     string: []const u8,
     number: f64,
+    boolean: bool,
     none,
 };
 
 const Self = @This();
 
 type: Type,
-literal: ?Literal = null,
+literal: Literal = .none,
 line: usize = 0,
 column: usize = 0,
 lexeme: []const u8,
