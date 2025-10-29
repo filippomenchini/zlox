@@ -166,7 +166,11 @@ pub fn tokens(
                 }
 
                 const owned_string = try allocator.dupe(u8, string);
-                const lexeme = try std.fmt.allocPrint(allocator, "\"{s}\"", .{owned_string});
+                const lexeme = try allocator.alloc(u8, owned_string.len + 2);
+                lexeme[0] = '"';
+                @memcpy(lexeme[1 .. owned_string.len + 1], owned_string);
+                lexeme[lexeme.len - 1] = '"';
+
                 break :blk .{ .type = .STRING, .literal = .{ .string = owned_string }, .lexeme = lexeme };
             },
             else => blk: {
