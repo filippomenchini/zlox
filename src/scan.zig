@@ -26,6 +26,7 @@ pub fn tokens(
 ) error{
     UnexpectedCharacter,
     UnterminatedString,
+    UnterminatedComment,
     OutOfMemory,
     ReadFailed,
     EndOfStream,
@@ -103,11 +104,39 @@ pub fn tokens(
                     reader.toss(1);
                     column += 1;
                     const peeked = reader.peekDelimiterExclusive('\n') catch |err| switch (err) {
-                        error.EndOfStream => break :blk null,
+                        error.EndOfStream => break,
                         else => return err,
                     };
                     reader.toss(peeked.len);
                     column += peeked.len;
+                    break :blk null;
+                } else if (try match(reader, '*')) {
+                    reader.toss(1);
+                    column += 1;
+                    var nesting_level: usize = 1;
+                    while (nesting_level > 0) {
+                        const peeked = reader.takeByte() catch |err| switch (err) {
+                            error.EndOfStream => return error.UnterminatedComment,
+                            else => return err,
+                        };
+
+                        if (peeked == '*' and try match(reader, '/')) {
+                            reader.toss(1);
+                            column += 1;
+                            nesting_level -= 1;
+                        } else if (peeked == '/' and try match(reader, '*')) {
+                            reader.toss(1);
+                            column += 1;
+                            nesting_level += 1;
+                        }
+
+                        if (peeked == '\n') {
+                            column = 1;
+                            line += 1;
+                        } else {
+                            column += 1;
+                        }
+                    }
                     break :blk null;
                 } else {
                     break :blk .{ .type = .SLASH, .lexeme = "/" };
