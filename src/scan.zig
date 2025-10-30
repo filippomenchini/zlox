@@ -104,7 +104,7 @@ pub fn tokens(
                     reader.toss(1);
                     column += 1;
                     const peeked = reader.peekDelimiterExclusive('\n') catch |err| switch (err) {
-                        error.EndOfStream => break,
+                        error.EndOfStream => break :blk null,
                         else => return err,
                     };
                     reader.toss(peeked.len);
